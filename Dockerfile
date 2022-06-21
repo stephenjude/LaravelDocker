@@ -1,20 +1,19 @@
-FROM gcr.io/educative-exec-env/educative-ubuntu-microvm:latest
-RUN apt-get update && apt-get install -y docker.io
-RUN apt-get install -y curl && apt-get install -y wget
-RUN curl -L "https://github.com/docker/compose/releases/download/1.24.1/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose && chmod +x /usr/local/bin/docker-compose && ln -s /usr/local/bin/docker-compose /usr/bin/docker-compose
+FROM ubuntu:21.10
 
 LABEL maintainer="Stephen Jude"
 LABEL credit="Taylor Otwell"
-
-ARG WWWGROUP
-ARG NODE_VERSION=16
-
-WORKDIR /var/www/html
 
 ENV DEBIAN_FRONTEND noninteractive
 ENV TZ=UTC
 
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
+ENV MYSQL_ROOT_PASSWORD='${DB_PASSWORD}'
+ENV MYSQL_ROOT_HOST="%"
+ENV MYSQL_DATABASE='${DB_DATABASE}'
+ENV MYSQL_USER='${DB_USERNAME}'
+ENV MYSQL_PASSWORD='${DB_PASSWORD}'
+ENV MYSQL_ALLOW_EMPTY_PASSWORD=1
 
 RUN apt-get update \
     && apt-get install -y gnupg gosu curl ca-certificates zip unzip git supervisor sqlite3 libcap2-bin libpng-dev python2 \
@@ -32,33 +31,21 @@ RUN apt-get update \
        php8.0-xml php8.0-zip php8.0-bcmath php8.0-soap \
        php8.0-intl php8.0-readline php8.0-pcov \
        php8.0-msgpack php8.0-igbinary php8.0-ldap \
-       php8.0-redis php8.0-swoole php8.0-xdebug \
+       php8.0-redis php8.0-swoole \
     && php -r "readfile('https://getcomposer.org/installer');" | php -- --install-dir=/usr/bin/ --filename=composer \
-    && curl -sL https://deb.nodesource.com/setup_$NODE_VERSION.x | bash - \
-    && apt-get install -y nodejs \
-    && npm install -g npm \
-    && curl -sS https://dl.yarnpkg.com/debian/pubkey.gpg | apt-key add - \
-    && echo "deb https://dl.yarnpkg.com/debian/ stable main" > /etc/apt/sources.list.d/yarn.list \
-    && apt-get update \
-    && apt-get install -y yarn \
     && apt-get install -y mysql-client \
-    && apt-get install -y postgresql-client \
+    && apt-get install -y mysql-server \
     && apt-get -y autoremove \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 RUN update-alternatives --set php /usr/bin/php8.0
 
-RUN setcap "cap_net_bind_service=+ep" /usr/bin/php8.0
+COPY php.ini /etc/php/8.0/cli/conf.d/php.ini
 
-RUN groupadd --force -g $WWWGROUP sail
-RUN useradd -ms /bin/bash --no-user-group -g $WWWGROUP -u 1337 sail
+WORKDIR /var/www/html
 
-COPY start-container /usr/local/bin/start-container
-COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
-COPY php.ini /etc/php/8.0/cli/conf.d/99-sail.ini
-RUN chmod +x /usr/local/bin/start-container
+RUN mkdir storage && mkdir public \
+    && chown -R www-data:www-data /var/www/html \
+    && chmod -R 775 /var/www/html/storage
 
-EXPOSE 8000
-
-ENTRYPOINT ["start-container"]
